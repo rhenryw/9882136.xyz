@@ -1,0 +1,51 @@
+  html,body { height:100%; margin:0; background:#000; overflow:hidden; font-family: "Courier New", monospace; color:#0f0; }
+  h1 { text-align:center; color:#ff69b4; margin:10px 0; text-shadow:0 0 10px #f0f; animation:pulse .8s infinite alternate; }
+  @keyframes pulse { from{transform:scale(1); color:#0f0} to{transform:scale(1.12); color:#ff0} }
+
+  .chaos { position:absolute; white-space:pre-wrap; font-family:monospace; color:#0ff; text-shadow:0 0 5px #0ff; max-width:520px; pointer-events:none; user-select:none; }
+  .bouncer { position:fixed; z-index:8000; font-weight:bold; padding:6px 10px; border-radius:4px; background:rgba(0,0,0,0.7); color:#ff4444; text-shadow:0 0 6px red; pointer-events:none; }
+
+  .win95-window {
+    position:fixed;
+    z-index:10000;
+    width:320px;
+    min-height:100px;
+    background:linear-gradient(#c0c0c0,#a8a8a8);
+    border:2px solid #000;
+    box-shadow: 6px 6px 0 #333;
+    font-family: "MS Sans Serif", "Segoe UI", Arial, sans-serif;
+    user-select:none;
+  }
+  .win95-title {
+    background:linear-gradient(#000060,#000048);
+    color:#fff;
+    padding:4px 6px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    cursor:grab;
+    font-weight:bold;
+    text-shadow:1px 1px 0 #000;
+  }
+  .win95-title .title-left { display:flex; gap:6px; align-items:center; }
+  .win95-icon {
+    width:16px; height:16px; background:#fff; border:1px solid #000; display:inline-block; box-shadow:1px 1px 0 #888 inset;
+  }
+  .win95-buttons { display:flex; gap:6px; }
+  .win95-btn {
+    width:18px; height:16px; background:linear-gradient(#eee,#bbb); border:1px solid #000; display:inline-flex; align-items:center; justify-content:center;
+    font-size:11px; cursor:pointer;
+  }
+  .win95-body { padding:12px; background:#e0e0e0; color:#000; min-height:60px; line-height:1.2; }
+  .win95-footer { padding:6px 8px; background:linear-gradient(#d0d0d0,#b8b8b8); display:flex; justify-content:flex-end; gap:8px; }
+  .btn-ok { padding:4px 10px; background:linear-gradient(#fff,#ddd); border:1px solid #000; cursor:pointer; }
+  .blink { animation: blinkTitle 1s steps(2, start) infinite; }
+  @keyframes blinkTitle { to { opacity:0.2; } }
+
+  .retro {
+    font-family: "MS Sans Serif", monospace;
+    font-size:13px;
+  }
+
+  #controls { position:fixed; left:10px; bottom:10px; z-index:20000; display:flex; gap:8px; }
+  .control-btn { padding:8px 12px; background:#222; color:#0f0; border:1px solid #0f0; cursor:pointer; font-weight:bold; }
